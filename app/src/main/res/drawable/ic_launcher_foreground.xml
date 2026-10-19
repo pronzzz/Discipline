@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- faint full track -->
+    <path
+        android:pathData="M54,32 A22,22 0 1,1 53.99,32"
+        android:strokeColor="#40FFFFFF"
+        android:strokeWidth="7"
+        android:fillColor="#00000000" />
+    <!-- progress arc, three quarters -->
+    <path
+        android:pathData="M54,32 A22,22 0 1,1 32,54"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="7"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M54,54m-5.5,0a5.5,5.5 0,1 1,11 0a5.5,5.5 0,1 1,-11 0"
+        android:fillColor="#FFFFFFFF" />
+</vector>
