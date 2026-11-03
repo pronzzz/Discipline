@@ -83,17 +83,32 @@ class FoodRepository(
 
     sealed interface BarcodeResult {
         data class Found(val food: FoodEntity) : BarcodeResult
+        /** Known product without nutrition facts; the user can fill them in. */
+        data class Incomplete(val code: String, val name: String?, val brand: String?) : BarcodeResult
         data object NotFound : BarcodeResult
         data class Failed(val message: String) : BarcodeResult
     }
 
+    /**
+     * Looks a barcode up on this device, then on Open Food Facts. The same product can be
+     * printed as UPC-E, UPC-A or EAN-13, so equivalent forms are tried too.
+     */
     suspend fun lookupBarcode(code: String): BarcodeResult {
-        dao.byBarcode(code)?.let { return BarcodeResult.Found(it) }
+        val variants = Barcodes.variants(code)
+        if (variants.isEmpty()) return BarcodeResult.NotFound
+        for (v in variants) dao.byBarcode(v)?.let { return BarcodeResult.Found(it) }
+        var incomplete: BarcodeResult.Incomplete? = null
         return try {
-            val remote = off.product(code) ?: return BarcodeResult.NotFound
-            BarcodeResult.Found(persist(remote))
+            for (v in variants.take(3)) {
+                when (val p = off.product(v)) {
+                    is OpenFoodFactsClient.Product.Complete -> return BarcodeResult.Found(persist(p.food))
+                    is OpenFoodFactsClient.Product.Incomplete -> if (incomplete == null) incomplete = BarcodeResult.Incomplete(p.code, p.name, p.brand)
+                    OpenFoodFactsClient.Product.Missing -> Unit
+                }
+            }
+            incomplete ?: BarcodeResult.NotFound
         } catch (e: Exception) {
-            BarcodeResult.Failed(e.message ?: "Network error")
+            incomplete ?: BarcodeResult.Failed(e.message ?: "Network error")
         }
     }
 

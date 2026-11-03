@@ -199,8 +199,9 @@ private fun MealCard(ui: DayUi, meal: Int) {
         ) {
             Column(Modifier.weight(1f)) {
                 Text(ui.settings.mealName(meal), style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
-                if (entries.isNotEmpty()) {
-                    val n = entries.map { it.nutrients }.sum()
+                val others = ui.importedByMeal[meal].orEmpty()
+                if (entries.isNotEmpty() || others.isNotEmpty()) {
+                    val n = ui.mealNutrients(meal)
                     Text(
                         "C ${n.carbs.toInt()}g · P ${n.protein.toInt()}g · F ${n.fat.toInt()}g",
                         style = MaterialTheme.typography.bodySmall,
@@ -245,6 +246,21 @@ private fun MealCard(ui: DayUi, meal: Int) {
                         }
                     },
                 )
+            }
+        }
+        ui.importedByMeal[meal].orEmpty().forEach { f ->
+            key(f.hcId) {
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 60.dp).padding(horizontal = 24.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(f.name, style = MaterialTheme.typography.bodyLarge, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("From ${f.sourceApp}", style = MaterialTheme.typography.bodySmall, color = colors.textTertiary, maxLines = 1)
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Text(Units.kcal(f.nutrients.calories), style = MaterialTheme.typography.bodyLarge, color = colors.textSecondary)
+                }
             }
         }
         Row(Modifier.fillMaxWidth().padding(start = 12.dp, bottom = 6.dp)) {
@@ -348,6 +364,13 @@ private fun WaterCard(ui: DayUi) {
         Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Water", style = MaterialTheme.typography.titleMedium, color = colors.textPrimary, modifier = Modifier.weight(1f))
             Text("${Units.water(ui.waterMl, units)} / ${Units.water(ui.goals.waterMl, units)}", style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+        }
+        if (ui.otherWaterMl > 0) {
+            Text(
+                "Includes ${Units.water(ui.otherWaterMl, units)} from other apps",
+                style = MaterialTheme.typography.bodySmall, color = colors.textSecondary,
+                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 2.dp),
+            )
         }
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp),

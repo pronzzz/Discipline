@@ -1,9 +1,9 @@
 package app.discipline.ui.screens
 
-import android.content.ActivityNotFoundException
 import android.text.format.DateUtils
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,10 +14,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.DirectionsWalk
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.MonitorHeart
+import androidx.compose.material.icons.rounded.SelfImprovement
 import androidx.compose.material.icons.rounded.FitnessCenter
 import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.MonitorWeight
@@ -32,33 +39,34 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
-import androidx.health.connect.client.records.ExerciseSessionRecord
-import androidx.health.connect.client.records.HydrationRecord
-import androidx.health.connect.client.records.NutritionRecord
-import androidx.health.connect.client.records.StepsRecord
-import androidx.health.connect.client.records.WeightRecord
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import app.discipline.data.HealthToggles
 import app.discipline.health.HealthAvailability
-import app.discipline.health.HealthConnectManager.Companion.read
-import app.discipline.health.HealthConnectManager.Companion.write
+import app.discipline.health.HealthCategory
+import app.discipline.health.HcType
+import app.discipline.health.HealthStatus
+import app.discipline.health.HealthToggles
 import app.discipline.health.HealthSyncWorker
 import app.discipline.ui.LocalNavigator
 import app.discipline.ui.LocalSnackbar
+import app.discipline.ui.Route
 import app.discipline.ui.components.Group
 import app.discipline.ui.components.GroupDivider
 import app.discipline.ui.components.IconBadge
 import app.discipline.ui.components.OneUiScreen
+import app.discipline.ui.components.ListRow
+import app.discipline.ui.components.OneUiSwitch
 import app.discipline.ui.components.PillButton
+import app.discipline.ui.components.SectionLabel
 import app.discipline.ui.components.SwitchRow
 import app.discipline.ui.components.TonalPillButton
 import app.discipline.ui.theme.OneUi
@@ -102,15 +110,19 @@ fun HealthConnectPanel(showToggles: Boolean, onConnected: () -> Unit = {}) {
         requested = missing
         try {
             launcher.launch(missing)
-        } catch (e: ActivityNotFoundException) {
+        } catch (e: Exception) {
             scope.launch { snackbar.showSnackbar("Couldn't open Health Connect") }
         }
     }
 
     fun open(intent: android.content.Intent) {
-        try { context.startActivity(intent) } catch (e: ActivityNotFoundException) {
+        try { context.startActivity(intent) } catch (e: Exception) {
             scope.launch { snackbar.showSnackbar("Couldn't open Health Connect") }
         }
+    }
+
+    fun openSettings() {
+        if (!c.health.openSettings(context)) scope.launch { snackbar.showSnackbar("Couldn't open Health Connect settings") }
     }
 
     val wanted = c.health.permissionsFor(s.health)
@@ -147,7 +159,7 @@ fun HealthConnectPanel(showToggles: Boolean, onConnected: () -> Unit = {}) {
                         style = MaterialTheme.typography.bodySmall, color = colors.exercise, textAlign = TextAlign.Center,
                     )
                     Spacer(Modifier.height(12.dp))
-                    PillButton("Open Health Connect", onClick = { open(c.health.settingsIntent()) }, modifier = Modifier.fillMaxWidth())
+                    PillButton("Open Health Connect", onClick = ::openSettings, modifier = Modifier.fillMaxWidth())
                 }
                 !status.connected -> PillButton("Connect", onClick = { request(wanted) }, modifier = Modifier.fillMaxWidth())
                 else -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
@@ -155,7 +167,7 @@ fun HealthConnectPanel(showToggles: Boolean, onConnected: () -> Unit = {}) {
                         HealthSyncWorker.enqueueFull(context, readDays = 30)
                         scope.launch { snackbar.showSnackbar("Syncing with Health Connect") }
                     })
-                    TonalPillButton("Permissions", modifier = Modifier.weight(1f), onClick = { open(c.health.settingsIntent()) })
+                    TonalPillButton("Permissions", modifier = Modifier.weight(1f), onClick = ::openSettings)
                 }
             }
             if (status.connected && missing.isNotEmpty()) {
@@ -167,48 +179,147 @@ fun HealthConnectPanel(showToggles: Boolean, onConnected: () -> Unit = {}) {
 
     if (!showToggles || status.availability != HealthAvailability.AVAILABLE) return
 
-    fun update(t: HealthToggles, perms: Set<String>, on: Boolean) {
-        scope.launch {
-            c.settings.setHealthToggles(t)
-            if (on && status.connected) request(perms)
+    val nav = LocalNavigator.current
+    if (status.connected) {
+        Group {
+            ListRow(
+                "Health data",
+                summary = "Everything Discipline reads from Health Connect",
+                leading = { IconBadge(Icons.Rounded.MonitorHeart, colors.danger) },
+                trailing = { Chevron() },
+                onClick = { nav.push(Route.HealthData) },
+            )
+            GroupDivider(76.dp)
+            ListRow(
+                "Log health data",
+                summary = "Blood pressure, sleep, cycle, vitals and more",
+                leading = { IconBadge(Icons.Rounded.Add, colors.accent) },
+                trailing = { Chevron() },
+                onClick = { nav.push(Route.LogHealth(null)) },
+            )
         }
     }
 
-    val g = status.granted
-    fun allowed(p: String) = if (p in g) "Allowed" else "Not allowed in Health Connect"
-
-    Group(label = "Share with Health Connect") {
-        SwitchRow("Nutrition", s.health.writeNutrition, { update(s.health.copy(writeNutrition = it), setOf(write(NutritionRecord::class)), it) },
-            summary = allowed(write(NutritionRecord::class)), leading = { IconBadge(Icons.Rounded.Restaurant, colors.calories) })
-        GroupDivider(76.dp)
-        SwitchRow("Water", s.health.writeHydration, { update(s.health.copy(writeHydration = it), setOf(write(HydrationRecord::class)), it) },
-            summary = allowed(write(HydrationRecord::class)), leading = { IconBadge(Icons.Rounded.WaterDrop, colors.water) })
-        GroupDivider(76.dp)
-        SwitchRow("Weight", s.health.writeWeight, { update(s.health.copy(writeWeight = it), setOf(write(WeightRecord::class)), it) },
-            summary = allowed(write(WeightRecord::class)), leading = { IconBadge(Icons.Rounded.MonitorWeight, colors.weight) })
-        GroupDivider(76.dp)
-        SwitchRow("Exercise", s.health.writeExercise, {
-            update(s.health.copy(writeExercise = it), setOf(write(ExerciseSessionRecord::class), write(ActiveCaloriesBurnedRecord::class)), it)
-        }, summary = allowed(write(ExerciseSessionRecord::class)), leading = { IconBadge(Icons.Rounded.FitnessCenter, colors.exercise) })
+    fun update(t: HealthToggles, newPermissions: Set<String>) {
+        scope.launch {
+            c.settings.setHealthToggles(t)
+            if (newPermissions.isNotEmpty() && status.connected) request(newPermissions)
+        }
     }
-    Group(label = "Read from Health Connect") {
-        SwitchRow("Steps", s.health.readSteps, { update(s.health.copy(readSteps = it), setOf(read(StepsRecord::class)), it) },
-            summary = allowed(read(StepsRecord::class)), leading = { IconBadge(Icons.AutoMirrored.Rounded.DirectionsWalk, colors.steps) })
+
+    Group(label = "Data types") {
+        HealthCategory.entries.forEachIndexed { i, cat ->
+            if (i > 0) GroupDivider(24.dp)
+            CategoryRow(cat, s.health, status, onRead = { on ->
+                update(s.health.withRead(cat, on), if (on) typesIn(cat, status).mapTo(mutableSetOf()) { it.readPermission } else emptySet())
+            }, onWrite = { on ->
+                update(s.health.withWrite(cat, on), if (on) typesIn(cat, status).mapTo(mutableSetOf()) { it.writePermission } else emptySet())
+            })
+        }
+    }
+    Group(label = "Counting other apps' data") {
+        SwitchRow(
+            "Food from other apps", s.health.countOtherFood, { update(s.health.copy(countOtherFood = it), emptySet()) },
+            summary = "Count meals logged in other apps towards your calories. Leave off if those apps already read Discipline's meals.",
+            leading = { IconBadge(Icons.Rounded.Restaurant, colors.calories) },
+        )
         GroupDivider(76.dp)
-        SwitchRow("Active calories", s.health.readActiveCalories, { update(s.health.copy(readActiveCalories = it), setOf(read(ActiveCaloriesBurnedRecord::class)), it) },
-            summary = allowed(read(ActiveCaloriesBurnedRecord::class)), leading = { IconBadge(Icons.Rounded.LocalFireDepartment, colors.exercise) })
-        GroupDivider(76.dp)
-        SwitchRow("Workouts from other apps", s.health.readExercise, { update(s.health.copy(readExercise = it), setOf(read(ExerciseSessionRecord::class)), it) },
-            summary = allowed(read(ExerciseSessionRecord::class)), leading = { IconBadge(Icons.Rounded.FitnessCenter, Color(0xFF6366F1)) })
-        GroupDivider(76.dp)
-        SwitchRow("Weight from smart scales", s.health.readWeight, { update(s.health.copy(readWeight = it), setOf(read(WeightRecord::class)), it) },
-            summary = allowed(read(WeightRecord::class)), leading = { IconBadge(Icons.Rounded.MonitorWeight, colors.weight) })
+        SwitchRow(
+            "Water from other apps", s.health.countOtherWater, { update(s.health.copy(countOtherWater = it), emptySet()) },
+            summary = "Add drinks logged elsewhere to your daily water",
+            leading = { IconBadge(Icons.Rounded.WaterDrop, colors.water) },
+        )
     }
     Text(
-        "Discipline writes each food you log as its own nutrition record, tagged with the meal, so other apps see exactly what you ate. " +
-            "Edits and deletions are mirrored automatically. Data you read is only stored on this device.",
+        "Discipline can read and write every Health Connect data type. Use Permissions to choose individual types in Health Connect. " +
+            "Each food you log becomes its own nutrition record, tagged with the meal, and edits and deletions are mirrored automatically. " +
+            "Data Discipline reads stays on this device and refreshes when you open the app and about once an hour.",
         style = MaterialTheme.typography.bodySmall,
         color = colors.textTertiary,
         modifier = Modifier.padding(horizontal = 28.dp, vertical = 16.dp),
     )
+}
+
+private fun typesIn(cat: HealthCategory, status: HealthStatus) = HcType.entries.filter { it.category == cat && status.supported(it) }
+
+@Composable
+private fun CategoryRow(
+    cat: HealthCategory,
+    toggles: HealthToggles,
+    status: HealthStatus,
+    onRead: (Boolean) -> Unit,
+    onWrite: (Boolean) -> Unit,
+) {
+    val colors = OneUi.colors
+    var expanded by rememberSaveable(cat) { mutableStateOf(false) }
+    val types = typesIn(cat, status)
+    val readOk = types.count(status::canRead)
+    val writeOk = types.count(status::canWrite)
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(start = 24.dp, end = 12.dp, top = 14.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconBadge(categoryIcon(cat), categoryColor(cat))
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text(cat.label, style = MaterialTheme.typography.bodyLarge, color = colors.textPrimary)
+                Text(
+                    "Read $readOk of ${types.size} · Write $writeOk of ${types.size}",
+                    style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary,
+                )
+            }
+            Icon(if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, if (expanded) "Hide types" else "Show types", tint = colors.textSecondary)
+        }
+        Row(Modifier.fillMaxWidth().padding(start = 76.dp, end = 16.dp, bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            LabeledSwitch("Read", cat in toggles.read, onRead)
+            LabeledSwitch("Write", cat in toggles.write, onWrite)
+        }
+        if (expanded) {
+            types.forEach { t ->
+                Row(Modifier.fillMaxWidth().padding(start = 76.dp, end = 24.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(t.label, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary, modifier = Modifier.weight(1f))
+                    Text(
+                        listOf(if (status.canRead(t)) "Read" else null, if (status.canWrite(t)) "Write" else null).filterNotNull().joinToString(" · ").ifEmpty { "Not allowed" },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (status.canRead(t) || status.canWrite(t)) colors.success else colors.textTertiary,
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+}
+
+@Composable
+private fun LabeledSwitch(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clip(OneUi.PillShape).clickable { onChange(!checked) }.padding(end = 4.dp)) {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = OneUi.colors.textSecondary)
+        Spacer(Modifier.width(8.dp))
+        OneUiSwitch(checked, onChange)
+    }
+}
+
+fun categoryIcon(cat: HealthCategory): ImageVector = when (cat) {
+    HealthCategory.ACTIVITY -> Icons.AutoMirrored.Rounded.DirectionsWalk
+    HealthCategory.BODY -> Icons.Rounded.MonitorWeight
+    HealthCategory.CYCLE -> Icons.Rounded.WaterDrop
+    HealthCategory.NUTRITION -> Icons.Rounded.Restaurant
+    HealthCategory.SLEEP -> Icons.Rounded.Bedtime
+    HealthCategory.VITALS -> Icons.Rounded.Favorite
+    HealthCategory.WELLNESS -> Icons.Rounded.SelfImprovement
+}
+
+@Composable
+fun categoryColor(cat: HealthCategory): Color {
+    val c = OneUi.colors
+    return when (cat) {
+        HealthCategory.ACTIVITY -> c.steps
+        HealthCategory.BODY -> c.weight
+        HealthCategory.CYCLE -> Color(0xFFEC4899)
+        HealthCategory.NUTRITION -> c.calories
+        HealthCategory.SLEEP -> Color(0xFF6366F1)
+        HealthCategory.VITALS -> c.danger
+        HealthCategory.WELLNESS -> Color(0xFF14B8A6)
+    }
 }

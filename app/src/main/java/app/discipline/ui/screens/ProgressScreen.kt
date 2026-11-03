@@ -162,10 +162,10 @@ fun ProgressScreen() {
             initialKg = weights.lastOrNull()?.kg ?: settings.profile.currentWeightKg,
             units = units,
             onDismiss = { logging = false },
-            onSave = { day, kg ->
+            onSave = { day, kg, fat ->
                 logging = false
                 c.scope.launch {
-                    c.diary.logWeight(day, kg)
+                    c.diary.logWeight(day, kg, fat)
                     val latest = c.db.diary().allWeights().lastOrNull()
                     if (latest != null) c.settings.setCurrentWeight(latest.kg)
                 }
@@ -175,8 +175,11 @@ fun ProgressScreen() {
 }
 
 @Composable
-fun WeightDialog(initialKg: Double, units: app.discipline.domain.UnitSystem, onDismiss: () -> Unit, onSave: (LocalDate, Double) -> Unit) {
+fun WeightDialog(initialKg: Double, units: app.discipline.domain.UnitSystem, onDismiss: () -> Unit, onSave: (LocalDate, Double, Double?) -> Unit) {
     var text by rememberSaveable { mutableStateOf(Units.number(Units.weightValue(initialKg, units))) }
+    var fatText by rememberSaveable { mutableStateOf("") }
+    val fat = fatText.replace(',', '.').toDoubleOrNull()?.takeIf { it in 1.0..80.0 }
+    val fatOk = fatText.isBlank() || fat != null
     var day by remember { mutableStateOf(LocalDate.now()) }
     var picking by remember { mutableStateOf(false) }
     val value = text.replace(',', '.').toDoubleOrNull()?.takeIf { it in 20.0..700.0 }
@@ -189,10 +192,12 @@ fun WeightDialog(initialKg: Double, units: app.discipline.domain.UnitSystem, onD
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OneUiField(text, { text = it.filter { ch -> ch.isDigit() || ch == '.' || ch == ',' }.take(6) }, "Weight",
                     suffix = Units.weightUnit(units), keyboardType = KeyboardType.Decimal, isError = value == null)
+                OneUiField(fatText, { fatText = it.filter { ch -> ch.isDigit() || ch == '.' || ch == ',' }.take(5) }, "Body fat (optional)",
+                    suffix = "%", keyboardType = KeyboardType.Decimal, isError = !fatOk)
                 AccentTextButton(friendlyDate(day), onClick = { picking = true })
             }
         },
-        confirmButton = { AccentTextButton("Save", onClick = { value?.let { onSave(day, Units.weightToKg(it, units)) } }) },
+        confirmButton = { AccentTextButton("Save", onClick = { if (fatOk) value?.let { onSave(day, Units.weightToKg(it, units), fat) } }) },
         dismissButton = { AccentTextButton("Cancel", onClick = onDismiss, color = OneUi.colors.textSecondary) },
     )
     if (picking) DayPicker(day, onDismiss = { picking = false }, onPicked = { day = minOf(it, LocalDate.now()); picking = false })

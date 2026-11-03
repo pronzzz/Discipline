@@ -9,6 +9,8 @@ import app.discipline.data.food.FoodRepository
 import app.discipline.data.food.OpenFoodFactsClient
 import app.discipline.health.HealthConnectManager
 import app.discipline.health.HealthSyncWorker
+import app.discipline.update.Updater
+import app.discipline.vision.FoodModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -23,6 +25,8 @@ class AppContainer(context: Context) {
     val foods = FoodRepository(app, db.foods(), OpenFoodFactsClient("Discipline/${BuildConfig.VERSION_NAME} (Android; personal project)"))
     val diary = DiaryRepository(db) { HealthSyncWorker.enqueueWrite(app) }
     val health = HealthConnectManager(app, db, settings)
+    val foodModel = FoodModel(app)
+    val updater = Updater(app, settings)
 }
 
 class DisciplineApp : Application() {

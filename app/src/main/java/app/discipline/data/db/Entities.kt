@@ -1,10 +1,12 @@
 package app.discipline.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import app.discipline.domain.Nutrients
+import app.discipline.health.HcType
 
 enum class FoodSource { GENERIC, USER, OPEN_FOOD_FACTS }
 
@@ -63,6 +65,8 @@ data class ExerciseEntity(
     /** Health Connect ExerciseSessionRecord.EXERCISE_TYPE_* value. */
     val hcExerciseType: Int = 0,
     val updatedAt: Long = System.currentTimeMillis(),
+    /** Optional distance covered, written to Health Connect as a DistanceRecord. */
+    val distanceMeters: Double? = null,
 )
 
 @Entity(tableName = "water_entries", indices = [Index("epochDay")])
@@ -82,9 +86,12 @@ data class WeightEntity(
     val kg: Double,
     val source: WeightSource = WeightSource.LOCAL,
     val updatedAt: Long = System.currentTimeMillis(),
+    /** Optional body fat percentage measured with this weigh-in. */
+    val bodyFatPct: Double? = null,
 )
 
-enum class SyncKind { NUTRITION, HYDRATION, WEIGHT, EXERCISE }
+/** Stored by name, so new kinds can be appended safely. */
+enum class SyncKind { NUTRITION, HYDRATION, WEIGHT, EXERCISE, BODY_FAT, HEIGHT, LOG }
 enum class SyncOp { UPSERT, DELETE }
 
 /** Pending Health Connect write. One row per (kind, localId); the latest op wins. */
@@ -98,13 +105,59 @@ data class OutboxEntity(
     val createdAt: Long = System.currentTimeMillis(),
 )
 
-/** Per-day activity read from Health Connect. */
+/** Per-day totals read from Health Connect that feed the calorie and water maths. */
 @Entity(tableName = "hc_days")
 data class HealthDayEntity(
     @PrimaryKey val epochDay: Long,
     val steps: Long = 0,
+    /** Active calories from other apps (Discipline's own workouts are already counted). */
     val activeCalories: Double = 0.0,
     val updatedAt: Long = System.currentTimeMillis(),
+    /** Water other apps logged this day (Discipline's own records excluded). */
+    @ColumnInfo(defaultValue = "0") val otherWaterMl: Int = 0,
+)
+
+/**
+ * The value of one Health Connect data type on one day, as shown on the Health data screen:
+ * a daily total for amounts, a daily average for sampled metrics, minutes for sessions, and the
+ * latest reading for everything else. [value2] is diastolic blood pressure; [choice] holds the
+ * option of choice types (flow, test result).
+ */
+@Entity(tableName = "hc_readings", primaryKeys = ["type", "epochDay"])
+data class HealthReadingEntity(
+    val type: HcType,
+    val epochDay: Long,
+    val value: Double,
+    val value2: Double? = null,
+    val choice: Int? = null,
+    val time: Long,
+    val sourceApp: String,
+)
+
+/** A value entered with the "Log health data" form, mirrored to Health Connect via the outbox. */
+@Entity(tableName = "health_log", indices = [Index("type")])
+data class HealthLogEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val type: HcType,
+    val start: Long,
+    /** Equal to [start] for instantaneous types. */
+    val end: Long,
+    val value: Double? = null,
+    val value2: Double? = null,
+    val choice: Int? = null,
+    val updatedAt: Long = System.currentTimeMillis(),
+)
+
+/** Food other apps logged to Health Connect, shown read-only in the diary. */
+@Entity(tableName = "hc_nutrition", indices = [Index("epochDay")])
+data class ImportedFoodEntity(
+    @PrimaryKey val hcId: String,
+    val epochDay: Long,
+    val meal: Int,
+    val name: String,
+    @Embedded val nutrients: Nutrients,
+    val sourceApp: String,
+    val time: Long,
 )
 
 /** Exercise sessions recorded by other apps, shown read-only in the diary. */

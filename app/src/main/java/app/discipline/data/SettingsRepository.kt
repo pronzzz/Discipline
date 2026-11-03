@@ -11,6 +11,8 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import app.discipline.domain.ActivityLevel
+import app.discipline.health.HealthToggles
+import app.discipline.health.HealthCategory
 import app.discipline.domain.DailyGoals
 import app.discipline.domain.GoalCalculator
 import app.discipline.domain.MacroSplit
@@ -28,18 +30,6 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore("s
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
-/** Which Health Connect data types the user allows Discipline to sync. */
-data class HealthToggles(
-    val writeNutrition: Boolean = true,
-    val writeHydration: Boolean = true,
-    val writeWeight: Boolean = true,
-    val writeExercise: Boolean = true,
-    val readSteps: Boolean = true,
-    val readActiveCalories: Boolean = true,
-    val readExercise: Boolean = true,
-    val readWeight: Boolean = true,
-)
-
 data class Settings(
     val onboarded: Boolean = false,
     val profile: Profile = Profile(),
@@ -56,6 +46,9 @@ data class Settings(
     val health: HealthToggles = HealthToggles(),
     val healthDenials: Int = 0,
     val lastHealthSync: Long = 0,
+    val autoCheckUpdates: Boolean = true,
+    val lastUpdateCheck: Long = 0,
+    val skippedUpdate: String? = null,
 ) {
     fun goals(today: LocalDate = LocalDate.now()): DailyGoals =
         GoalCalculator.goals(profile, macros, customCalories, waterGoalMl, stepGoal, today)
@@ -88,14 +81,11 @@ class SettingsRepository(private val context: Context) {
         val haptics = booleanPreferencesKey("haptics")
         val hcDenials = intPreferencesKey("hc_denials")
         val hcLastSync = longPreferencesKey("hc_last_sync")
-        val hcWNutrition = booleanPreferencesKey("hc_w_nutrition")
-        val hcWHydration = booleanPreferencesKey("hc_w_hydration")
-        val hcWWeight = booleanPreferencesKey("hc_w_weight")
-        val hcWExercise = booleanPreferencesKey("hc_w_exercise")
-        val hcRSteps = booleanPreferencesKey("hc_r_steps")
-        val hcRActive = booleanPreferencesKey("hc_r_active")
-        val hcRExercise = booleanPreferencesKey("hc_r_exercise")
-        val hcRWeight = booleanPreferencesKey("hc_r_weight")
+        val hcOtherFood = booleanPreferencesKey("hc_count_other_food")
+        val hcOtherWater = booleanPreferencesKey("hc_count_other_water")
+        val autoUpdates = booleanPreferencesKey("auto_check_updates")
+        val lastUpdateCheck = longPreferencesKey("last_update_check")
+        val skippedUpdate = stringPreferencesKey("skipped_update")
     }
 
     val settings: Flow<Settings> = context.dataStore.data.map { p ->
@@ -122,17 +112,16 @@ class SettingsRepository(private val context: Context) {
             theme = p[K.theme]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.SYSTEM,
             haptics = p[K.haptics] ?: true,
             health = HealthToggles(
-                writeNutrition = p[K.hcWNutrition] ?: true,
-                writeHydration = p[K.hcWHydration] ?: true,
-                writeWeight = p[K.hcWWeight] ?: true,
-                writeExercise = p[K.hcWExercise] ?: true,
-                readSteps = p[K.hcRSteps] ?: true,
-                readActiveCalories = p[K.hcRActive] ?: true,
-                readExercise = p[K.hcRExercise] ?: true,
-                readWeight = p[K.hcRWeight] ?: true,
+                read = HealthCategory.entries.filterTo(mutableSetOf()) { p[readKey(it)] ?: true },
+                write = HealthCategory.entries.filterTo(mutableSetOf()) { p[writeKey(it)] ?: true },
+                countOtherFood = p[K.hcOtherFood] ?: false,
+                countOtherWater = p[K.hcOtherWater] ?: true,
             ),
             healthDenials = p[K.hcDenials] ?: 0,
             lastHealthSync = p[K.hcLastSync] ?: 0,
+            autoCheckUpdates = p[K.autoUpdates] ?: true,
+            lastUpdateCheck = p[K.lastUpdateCheck] ?: 0,
+            skippedUpdate = p[K.skippedUpdate],
         )
     }.distinctUntilChanged()
 
@@ -170,15 +159,24 @@ class SettingsRepository(private val context: Context) {
         it[K.meals] = names.joinToString("\u001F")
     }
 
-    suspend fun setHealthToggles(t: HealthToggles) = context.dataStore.edit {
-        it[K.hcWNutrition] = t.writeNutrition
-        it[K.hcWHydration] = t.writeHydration
-        it[K.hcWWeight] = t.writeWeight
-        it[K.hcWExercise] = t.writeExercise
-        it[K.hcRSteps] = t.readSteps
-        it[K.hcRActive] = t.readActiveCalories
-        it[K.hcRExercise] = t.readExercise
-        it[K.hcRWeight] = t.readWeight
+    suspend fun setHealthToggles(t: HealthToggles) = context.dataStore.edit { p ->
+        HealthCategory.entries.forEach {
+            p[readKey(it)] = it in t.read
+            p[writeKey(it)] = it in t.write
+        }
+        p[K.hcOtherFood] = t.countOtherFood
+        p[K.hcOtherWater] = t.countOtherWater
+    }
+
+    private fun readKey(c: HealthCategory) = booleanPreferencesKey("hc_read_${c.name.lowercase()}")
+    private fun writeKey(c: HealthCategory) = booleanPreferencesKey("hc_write_${c.name.lowercase()}")
+
+    suspend fun setHeight(cm: Double) = context.dataStore.edit { it[K.height] = cm }
+
+    suspend fun setAutoCheckUpdates(v: Boolean) = context.dataStore.edit { it[K.autoUpdates] = v }
+    suspend fun setLastUpdateCheck(ms: Long) = context.dataStore.edit { it[K.lastUpdateCheck] = ms }
+    suspend fun setSkippedUpdate(version: String?) = context.dataStore.edit {
+        if (version == null) it.remove(K.skippedUpdate) else it[K.skippedUpdate] = version
     }
 
     suspend fun recordHealthDenial(reset: Boolean = false) = context.dataStore.edit {

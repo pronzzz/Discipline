@@ -108,7 +108,9 @@ fun GoalsScreen() {
             BottomActionBar {
                 PillButton("Save", enabled = valid, modifier = Modifier.fillMaxWidth(), onClick = {
                     scope.launch {
+                        val heightChanged = kotlin.math.abs(c.settings.current().profile.heightCm - profile!!.heightCm) > 0.4
                         c.settings.saveProfile(profile!!)
+                        if (heightChanged) c.diary.queueHeight()
                         c.settings.setMacros(split)
                         c.settings.setCustomCalories(if (customOn) customKcal else null)
                         nav.pop()

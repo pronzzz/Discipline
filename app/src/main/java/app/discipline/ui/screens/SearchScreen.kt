@@ -30,6 +30,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudOff
@@ -80,12 +81,8 @@ import app.discipline.ui.Route
 import app.discipline.ui.components.SectionLabel
 import app.discipline.ui.components.Segmented
 import app.discipline.ui.theme.OneUi
-import com.google.mlkit.vision.barcode.common.Barcode
-import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
-import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
 import java.time.LocalDate
 
 private enum class SearchTab(val label: String) { ALL("All"), RECENT("Recent"), FREQUENT("Frequent"), MINE("My foods") }
@@ -156,28 +153,7 @@ fun SearchScreen(route: Route.Search) {
         scope.launch { snackbar.showSnackbar("Added ${food.name} to ${settings?.mealName(meal) ?: "meal"}") }
     }
 
-    fun scan() {
-        val options = GmsBarcodeScannerOptions.Builder()
-            .setBarcodeFormats(Barcode.FORMAT_EAN_13, Barcode.FORMAT_EAN_8, Barcode.FORMAT_UPC_A, Barcode.FORMAT_UPC_E)
-            .enableAutoZoom()
-            .build()
-        scope.launch {
-            val code = try {
-                GmsBarcodeScanning.getClient(context, options).startScan().await()?.rawValue
-            } catch (e: Exception) {
-                if (e !is kotlinx.coroutines.CancellationException) snackbar.showSnackbar("Scanner unavailable: ${e.message ?: "unknown error"}")
-                null
-            } ?: return@launch
-            when (val r = c.foods.lookupBarcode(code)) {
-                is FoodRepository.BarcodeResult.Found -> nav.push(Route.FoodDetail(r.food.id, route.day, meal))
-                FoodRepository.BarcodeResult.NotFound -> {
-                    val res = snackbar.showSnackbar("No match for $code", actionLabel = "Create food")
-                    if (res == SnackbarResult.ActionPerformed) nav.push(Route.CreateFood(route.day, meal, barcode = code))
-                }
-                is FoodRepository.BarcodeResult.Failed -> snackbar.showSnackbar("Lookup failed: ${r.message}")
-            }
-        }
-    }
+    fun scan() = nav.push(Route.ScanBarcode(route.day, meal))
 
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { if (query.isEmpty()) runCatching { focus.requestFocus() } }
@@ -253,6 +229,9 @@ fun SearchScreen(route: Route.Search) {
                         item {
                             Spacer(Modifier.height(6.dp))
                             ActionCard(Icons.Rounded.QrCodeScanner, "Scan a barcode", "Look up packaged food instantly", onClick = ::scan)
+                            ActionCard(Icons.Rounded.PhotoCamera, "Snap a photo", "Recognise a meal on this phone and log it") {
+                                nav.push(Route.FoodPhoto(route.day, meal))
+                            }
                             ActionCard(Icons.Rounded.Bolt, "Quick add calories", "Log calories without a food") {
                                 nav.push(Route.QuickAdd(route.day, meal))
                             }

@@ -199,6 +199,8 @@ fun SettingsScreen() {
             }
         }
 
+        item { UpdateSettingsGroup(s) }
+
         item {
             Group {
                 ListRow("About Discipline", summary = "Version ${BuildConfig.VERSION_NAME}", leading = { IconBadge(Icons.Rounded.Info, colors.textSecondary) },

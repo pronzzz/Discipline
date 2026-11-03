@@ -37,6 +37,8 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        lifecycleScope.launch { container.updater.autoCheck() }
+
         setContent {
             val settings by container.settings.settings.collectAsStateWithLifecycle(initialValue = null)
             val s = settings ?: return@setContent

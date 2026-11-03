@@ -5,6 +5,8 @@ import app.discipline.data.db.DisciplineDatabase
 import app.discipline.data.db.ExerciseEntity
 import app.discipline.data.db.FoodEntity
 import app.discipline.data.db.FoodEntryEntity
+import app.discipline.data.db.HealthLogEntity
+import app.discipline.health.HcType
 import app.discipline.data.db.OutboxEntity
 import app.discipline.data.db.SyncKind
 import app.discipline.data.db.SyncOp
@@ -39,6 +41,11 @@ class DiaryRepository(
     fun caloriesByDay(from: LocalDate, to: LocalDate) = dao.caloriesByDay(from.toEpochDay(), to.toEpochDay())
     fun healthDays(from: LocalDate, to: LocalDate) = dao.healthDays(from.toEpochDay(), to.toEpochDay())
     fun loggedDays(today: LocalDate) = dao.loggedDays(today.toEpochDay())
+    fun importedFood(day: LocalDate) = dao.importedFood(day.toEpochDay())
+    fun latestReadings() = dao.latestReadings()
+    fun readingsForDay(day: LocalDate) = dao.readingsForDay(day.toEpochDay())
+    fun readings(type: HcType, from: LocalDate, to: LocalDate) = dao.readings(type, from.toEpochDay(), to.toEpochDay())
+    fun healthLogs(type: HcType) = dao.logs(type)
 
     suspend fun entry(id: Long) = dao.entry(id)
 
@@ -149,16 +156,43 @@ class DiaryRepository(
         enqueue(SyncKind.HYDRATION, id, SyncOp.DELETE)
     }
 
-    suspend fun logWeight(day: LocalDate, kg: Double) = tx {
-        dao.upsertWeight(WeightEntity(day.toEpochDay(), kg, WeightSource.LOCAL))
+    suspend fun logWeight(day: LocalDate, kg: Double, bodyFatPct: Double? = null) = tx {
+        val previous = dao.weight(day.toEpochDay())
+        dao.upsertWeight(WeightEntity(day.toEpochDay(), kg, WeightSource.LOCAL, bodyFatPct = bodyFatPct))
         enqueue(SyncKind.WEIGHT, day.toEpochDay(), SyncOp.UPSERT)
+        when {
+            bodyFatPct != null -> enqueue(SyncKind.BODY_FAT, day.toEpochDay(), SyncOp.UPSERT)
+            previous?.source == WeightSource.LOCAL && previous.bodyFatPct != null -> enqueue(SyncKind.BODY_FAT, day.toEpochDay(), SyncOp.DELETE)
+        }
     }
 
     suspend fun deleteWeight(day: LocalDate) = tx {
         val w = dao.weight(day.toEpochDay())
         dao.deleteWeight(day.toEpochDay())
         // Only remove from Health Connect what Discipline wrote there.
-        if (w?.source == WeightSource.LOCAL) enqueue(SyncKind.WEIGHT, day.toEpochDay(), SyncOp.DELETE)
+        if (w?.source == WeightSource.LOCAL) {
+            enqueue(SyncKind.WEIGHT, day.toEpochDay(), SyncOp.DELETE)
+            if (w.bodyFatPct != null) enqueue(SyncKind.BODY_FAT, day.toEpochDay(), SyncOp.DELETE)
+        }
+    }
+
+    /** Saves a value from the "Log health data" form and queues it for Health Connect. */
+    suspend fun saveHealthLog(e: HealthLogEntity): Long = tx {
+        val id = dao.upsertLog(e.copy(updatedAt = System.currentTimeMillis()))
+        val realId = if (e.id == 0L) id else e.id
+        enqueue(SyncKind.LOG, realId, SyncOp.UPSERT)
+        realId
+    }
+
+    suspend fun deleteHealthLog(e: HealthLogEntity) = tx {
+        dao.deleteLog(e.id)
+        // The record type is needed to delete it from Health Connect, so it's encoded in the id.
+        enqueue(SyncKind.LOG, logOutboxId(e), SyncOp.DELETE)
+    }
+
+    /** Queues the profile height for Health Connect; one record per day it changes. */
+    suspend fun queueHeight() = tx {
+        enqueue(SyncKind.HEIGHT, LocalDate.now().toEpochDay(), SyncOp.UPSERT)
     }
 
     private suspend fun enqueue(kind: SyncKind, localId: Long, op: SyncOp) =
@@ -170,3 +204,11 @@ class DiaryRepository(
         return result
     }
 }
+
+/**
+ * Outbox id for a deleted health log entry: the row is gone by the time the outbox drains, so the
+ * type's ordinal rides in the top bits. Upserts use the plain row id.
+ */
+fun logOutboxId(e: HealthLogEntity): Long = (e.type.ordinal.toLong() + 1) shl 48 or e.id
+fun decodeLogOutboxId(v: Long): Pair<HcType?, Long> =
+    (v ushr 48).toInt().let { if (it == 0) null else HcType.entries.getOrNull(it - 1) } to (v and 0xFFFFFFFFFFFFL)

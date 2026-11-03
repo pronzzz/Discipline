@@ -5,6 +5,8 @@ import app.discipline.data.Settings
 import app.discipline.data.db.ExerciseEntity
 import app.discipline.data.db.FoodEntryEntity
 import app.discipline.data.db.HealthDayEntity
+import app.discipline.data.db.HealthReadingEntity
+import app.discipline.data.db.ImportedFoodEntity
 import app.discipline.data.db.ImportedExerciseEntity
 import app.discipline.data.db.WaterEntity
 import app.discipline.domain.DailyGoals
@@ -27,12 +29,20 @@ data class DayUi(
     val water: List<WaterEntity>,
     val health: HealthDayEntity?,
     val streak: Int,
+    /** Food other apps logged; only stored when the user chose to count it. */
+    val importedFood: List<ImportedFoodEntity> = emptyList(),
+    /** Health Connect values for this day, one per type. */
+    val readings: List<HealthReadingEntity> = emptyList(),
 ) {
-    val food: Nutrients = entries.map { it.nutrients }.sum()
+    val food: Nutrients = (entries.map { it.nutrients } + importedFood.map { it.nutrients }).sum()
     val byMeal: Map<Int, List<FoodEntryEntity>> = entries.groupBy { it.meal }
-    fun mealCalories(meal: Int) = byMeal[meal].orEmpty().sumOf { it.nutrients.calories }
+    val importedByMeal: Map<Int, List<ImportedFoodEntity>> = importedFood.groupBy { it.meal }
+    fun mealNutrients(meal: Int) = (byMeal[meal].orEmpty().map { it.nutrients } + importedByMeal[meal].orEmpty().map { it.nutrients }).sum()
+    fun mealCalories(meal: Int) = mealNutrients(meal).calories
 
-    val waterMl = water.sumOf { it.ml }
+    val ownWaterMl = water.sumOf { it.ml }
+    val otherWaterMl = if (settings.health.countOtherWater) health?.otherWaterMl ?: 0 else 0
+    val waterMl = ownWaterMl + otherWaterMl
     val steps = health?.steps ?: 0L
     val manualExerciseKcal = exercise.sumOf { it.calories }
     val importedExerciseKcal = imported.sumOf { it.calories ?: 0 }
@@ -52,7 +62,8 @@ fun dayUiFlow(c: AppContainer, dayFlow: Flow<LocalDate>): Flow<DayUi> = dayFlow.
         c.diary.importedExercise(day),
         c.diary.water(day),
     ) { s, entries, ex, imp, water -> Base(s, entries, ex, imp, water) }
-    combine(base, c.diary.healthDay(day), c.diary.loggedDays(LocalDate.now())) { b, h, logged ->
+    val hc = combine(c.diary.healthDay(day), c.diary.importedFood(day), c.diary.readingsForDay(day)) { h, f, r -> Triple(h, f, r) }
+    combine(base, hc, c.diary.loggedDays(LocalDate.now())) { b, (h, food, readings), logged ->
         DayUi(
             day = day,
             settings = b.settings,
@@ -63,6 +74,8 @@ fun dayUiFlow(c: AppContainer, dayFlow: Flow<LocalDate>): Flow<DayUi> = dayFlow.
             water = b.water,
             health = h,
             streak = streak(logged, LocalDate.now()),
+            importedFood = food,
+            readings = readings,
         )
     }
 }

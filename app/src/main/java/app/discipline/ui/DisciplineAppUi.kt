@@ -11,6 +11,8 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -60,6 +62,11 @@ import app.discipline.ui.screens.HealthConnectScreen
 import app.discipline.ui.screens.MealNamesScreen
 import app.discipline.ui.screens.MyFoodsScreen
 import app.discipline.ui.screens.NutritionScreen
+import app.discipline.ui.screens.HealthDataScreen
+import app.discipline.ui.screens.UpdatePrompt
+import app.discipline.ui.screens.BarcodeScanScreen
+import app.discipline.ui.screens.FoodPhotoScreen
+import app.discipline.ui.screens.LogHealthScreen
 import app.discipline.ui.screens.OnboardingScreen
 import app.discipline.ui.screens.ProgressScreen
 import app.discipline.ui.screens.QuickAddScreen
@@ -82,6 +89,7 @@ fun DisciplineAppUi(settings: Settings) {
     BackHandler(enabled = nav.canGoBack) { nav.pop() }
 
     CompositionLocalProvider(LocalSnackbar provides snackbar, LocalNavigator provides nav) {
+        if (nav.current !is Route.Onboarding) UpdatePrompt()
         Box(Modifier.fillMaxSize().background(OneUi.colors.background)) {
             AnimatedContent(
                 targetState = nav.current,
@@ -106,6 +114,10 @@ fun DisciplineAppUi(settings: Settings) {
                     is Route.QuickAdd -> QuickAddScreen(route)
                     is Route.Exercise -> ExerciseScreen(route)
                     is Route.Nutrition -> NutritionScreen(LocalDate.ofEpochDay(route.day))
+                    is Route.HealthData -> HealthDataScreen()
+                    is Route.ScanBarcode -> BarcodeScanScreen(route)
+                    is Route.FoodPhoto -> FoodPhotoScreen(route)
+                    is Route.LogHealth -> LogHealthScreen(route.type)
                     Route.Goals -> GoalsScreen()
                     Route.HealthConnect -> HealthConnectScreen()
                     Route.MealNames -> MealNamesScreen()
@@ -147,7 +159,13 @@ private fun HomeShell(tab: Tab, diaryDay: Long, onDiaryDay: (Long) -> Unit) {
     val haptics = LocalHapticFeedback.current
     val c = OneUi.colors
     Column(Modifier.fillMaxSize()) {
-        Box(Modifier.weight(1f).fillMaxWidth()) {
+        // The navigation bar below already covers the bottom of the screen, so the keyboard
+        // inset inside each tab only needs to cover what's left above it.
+        Box(
+            Modifier.weight(1f).fillMaxWidth()
+                .consumeWindowInsets(WindowInsets.navigationBars)
+                .consumeWindowInsets(PaddingValues(bottom = 80.dp)),
+        ) {
             when (tab) {
                 Tab.TODAY -> TodayScreen(onOpenDiary = { onDiaryDay(LocalDate.now().toEpochDay()); nav.selectTab(Tab.DIARY) })
                 Tab.DIARY -> DiaryScreen(LocalDate.ofEpochDay(diaryDay), onDayChange = { onDiaryDay(it.toEpochDay()) })

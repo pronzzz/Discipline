@@ -18,3 +18,9 @@ local.properties
 *.xapk
 *.apk
 *.apks
+
+# Signing secrets — never commit
+keystore.properties
+*.jks
+*.keystore
+/dist

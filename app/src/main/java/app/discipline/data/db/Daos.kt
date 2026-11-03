@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Upsert
+import app.discipline.health.HcType
 import kotlinx.coroutines.flow.Flow
 
 data class DayCalories(val epochDay: Long, val calories: Double)
@@ -109,7 +110,15 @@ interface DiaryDao {
     @Query("SELECT * FROM food_entries WHERE epochDay = :day AND meal = :meal ORDER BY loggedAt")
     suspend fun entriesForMeal(day: Long, meal: Int): List<FoodEntryEntity>
 
-    @Query("SELECT epochDay, SUM(calories) AS calories FROM food_entries WHERE epochDay BETWEEN :from AND :to GROUP BY epochDay ORDER BY epochDay")
+    @Query(
+        """
+        SELECT epochDay, SUM(calories) AS calories FROM (
+            SELECT epochDay, calories FROM food_entries WHERE epochDay BETWEEN :from AND :to
+            UNION ALL
+            SELECT epochDay, calories FROM hc_nutrition WHERE epochDay BETWEEN :from AND :to
+        ) GROUP BY epochDay ORDER BY epochDay
+        """
+    )
     fun caloriesByDay(from: Long, to: Long): Flow<List<DayCalories>>
 
     @Query("SELECT DISTINCT epochDay FROM food_entries WHERE epochDay <= :today ORDER BY epochDay DESC LIMIT 400")
@@ -199,6 +208,73 @@ interface DiaryDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertImportedExercise(items: List<ImportedExerciseEntity>)
+
+    @Query("SELECT * FROM hc_days WHERE epochDay = :day")
+    suspend fun healthDayNow(day: Long): HealthDayEntity?
+
+    // ---- Readings of every Health Connect type (one row per type per day)
+    @Transaction
+    suspend fun replaceReadings(type: HcType, from: Long, to: Long, items: List<HealthReadingEntity>) {
+        clearReadings(type, from, to)
+        insertReadings(items)
+    }
+
+    @Query("DELETE FROM hc_readings WHERE type = :type AND epochDay BETWEEN :from AND :to")
+    suspend fun clearReadings(type: HcType, from: Long, to: Long)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertReadings(items: List<HealthReadingEntity>)
+
+    /** The newest reading of each type. */
+    @Query("SELECT r.* FROM hc_readings r JOIN (SELECT type, MAX(epochDay) AS d FROM hc_readings GROUP BY type) x ON x.type = r.type AND x.d = r.epochDay")
+    fun latestReadings(): Flow<List<HealthReadingEntity>>
+
+    @Query("SELECT * FROM hc_readings WHERE epochDay = :day")
+    fun readingsForDay(day: Long): Flow<List<HealthReadingEntity>>
+
+    @Query("SELECT * FROM hc_readings WHERE type = :type AND epochDay BETWEEN :from AND :to ORDER BY epochDay")
+    fun readings(type: HcType, from: Long, to: Long): Flow<List<HealthReadingEntity>>
+
+    @Query("DELETE FROM hc_readings")
+    suspend fun clearAllReadings()
+
+    // ---- Values entered with "Log health data"
+    @Upsert
+    suspend fun upsertLog(e: HealthLogEntity): Long
+
+    @Query("SELECT * FROM health_log WHERE id = :id")
+    suspend fun log(id: Long): HealthLogEntity?
+
+    @Query("DELETE FROM health_log WHERE id = :id")
+    suspend fun deleteLog(id: Long)
+
+    @Query("SELECT * FROM health_log WHERE type = :type ORDER BY start DESC LIMIT :limit")
+    fun logs(type: HcType, limit: Int = 20): Flow<List<HealthLogEntity>>
+
+    @Query("SELECT id FROM health_log WHERE start >= :fromMillis")
+    suspend fun logIdsSince(fromMillis: Long): List<Long>
+
+    // ---- Food logged by other apps
+    @Transaction
+    suspend fun replaceImportedFood(from: Long, to: Long, items: List<ImportedFoodEntity>) {
+        clearImportedFood(from, to)
+        insertImportedFood(items)
+    }
+
+    @Query("DELETE FROM hc_nutrition WHERE epochDay BETWEEN :from AND :to")
+    suspend fun clearImportedFood(from: Long, to: Long)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertImportedFood(items: List<ImportedFoodEntity>)
+
+    @Query("SELECT * FROM hc_nutrition WHERE epochDay = :day ORDER BY time")
+    fun importedFood(day: Long): Flow<List<ImportedFoodEntity>>
+
+    @Query("DELETE FROM hc_nutrition")
+    suspend fun clearAllImportedFood()
+
+    @Query("SELECT epochDay FROM weights WHERE epochDay >= :from AND source = 'LOCAL' AND bodyFatPct IS NOT NULL")
+    suspend fun localBodyFatDaysSince(from: Long): List<Long>
 
     @Query("DELETE FROM hc_days")
     suspend fun clearHealthDays()

@@ -74,6 +74,7 @@ fun OnboardingScreen(onDone: () -> Unit) {
             c.settings.saveProfile(p)
             c.settings.setMacros(MacroSplit())
             c.diary.logWeight(LocalDate.now(), p.currentWeightKg)
+            c.diary.queueHeight()
             c.settings.setOnboarded()
             onDone()
         }

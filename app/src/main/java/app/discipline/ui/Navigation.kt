@@ -21,12 +21,25 @@ sealed interface Route {
     @Serializable data class Search(val day: Long, val meal: Int) : Route
     @Serializable data class FoodDetail(val foodId: Long, val day: Long, val meal: Int) : Route
     @Serializable data class EditEntry(val entryId: Long) : Route
-    @Serializable data class CreateFood(val day: Long, val meal: Int, val barcode: String? = null, val editFoodId: Long? = null) : Route
+    @Serializable data class CreateFood(
+        val day: Long,
+        val meal: Int,
+        val barcode: String? = null,
+        val editFoodId: Long? = null,
+        /** Prefill from a product Open Food Facts knows but has no nutrition facts for. */
+        val name: String? = null,
+        val brand: String? = null,
+    ) : Route
+    @Serializable data class ScanBarcode(val day: Long, val meal: Int) : Route
+    @Serializable data class FoodPhoto(val day: Long, val meal: Int) : Route
     @Serializable data class QuickAdd(val day: Long, val meal: Int) : Route
     @Serializable data class Exercise(val day: Long, val exerciseId: Long? = null) : Route
     @Serializable data class Nutrition(val day: Long) : Route
     @Serializable data object Goals : Route
     @Serializable data object HealthConnect : Route
+    @Serializable data object HealthData : Route
+    /** [type] is an HcType name, or null to pick one. */
+    @Serializable data class LogHealth(val type: String?) : Route
     @Serializable data object MealNames : Route
     @Serializable data object MyFoods : Route
     @Serializable data object About : Route

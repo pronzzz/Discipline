@@ -93,10 +93,13 @@ fun OneUiScreen(
             }
         }
 
-        Column(Modifier.fillMaxSize()) {
+        // The keyboard inset is applied once, around both the list and the bottom bar. Applying it
+        // to each of them separately subtracted the keyboard height twice, which squeezed the list
+        // until the field being typed into disappeared behind the keyboard.
+        Column(Modifier.fillMaxSize().imePadding()) {
             LazyColumn(
                 state = listState,
-                modifier = Modifier.weight(1f).fillMaxWidth().imePadding(),
+                modifier = Modifier.weight(1f).fillMaxWidth(),
                 contentPadding = PaddingValues(
                     top = statusTop,
                     bottom = if (padNavigationBar && bottomBar == null) WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 24.dp else 24.dp,
@@ -137,8 +140,7 @@ fun OneUiScreen(
                     Modifier
                         .fillMaxWidth()
                         .background(colors.background)
-                        .then(if (padNavigationBar) Modifier.windowInsetsPadding(WindowInsets.navigationBars) else Modifier)
-                        .imePadding(),
+                        .then(if (padNavigationBar) Modifier.windowInsetsPadding(WindowInsets.navigationBars) else Modifier),
                 ) { bottomBar() }
             }
         }

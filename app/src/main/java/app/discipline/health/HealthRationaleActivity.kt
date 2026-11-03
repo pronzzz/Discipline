@@ -7,6 +7,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.DirectionsWalk
+import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FitnessCenter
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.MonitorWeight
@@ -44,7 +45,9 @@ class HealthRationaleActivity : ComponentActivity() {
                         Group(label = "What we write") {
                             ListRow("Nutrition and water", summary = "Each food you log, with its meal and nutrients, and each drink of water.", leading = { IconBadge(Icons.Rounded.Restaurant, c.calories) })
                             GroupDivider(76.dp)
-                            ListRow("Weight and exercise", summary = "Weigh-ins and workouts you enter, including calories burned.", leading = { IconBadge(Icons.Rounded.MonitorWeight, c.weight) })
+                            ListRow("Weight and exercise", summary = "Weigh-ins, body fat, height and workouts you enter, including calories burned and distance.", leading = { IconBadge(Icons.Rounded.MonitorWeight, c.weight) })
+                            GroupDivider(76.dp)
+                            ListRow("Anything else you log", summary = "Sleep, vitals such as blood pressure and heart rate, cycle tracking, body measurements and mindfulness, when you add them in Log health data.", leading = { IconBadge(Icons.Rounded.Favorite, c.danger) })
                         }
                     }
                     item {
@@ -52,6 +55,8 @@ class HealthRationaleActivity : ComponentActivity() {
                             ListRow("Steps and active calories", summary = "To credit activity against your daily calorie goal.", leading = { IconBadge(Icons.AutoMirrored.Rounded.DirectionsWalk, c.steps) })
                             GroupDivider(76.dp)
                             ListRow("Workouts and weight", summary = "From other apps and smart scales, so you don't log them twice.", leading = { IconBadge(Icons.Rounded.FitnessCenter, c.exercise) })
+                            GroupDivider(76.dp)
+                            ListRow("Every other type you allow", summary = "Activity, body measurements, cycle tracking, nutrition, sleep, vitals and wellness, shown in Health data and on Today. You choose each type in Health Connect.", leading = { IconBadge(Icons.Rounded.Favorite, c.danger) })
                         }
                     }
                     item {

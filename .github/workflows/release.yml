@@ -1,0 +1,100 @@
+name: Release
+
+# Push a tag like v1.2.0 to build, sign and publish a release. The in-app updater picks up
+# the newest release's .apk and verifies it against the matching .apk.sha256 asset.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # SHA-256 of the certificate every Discipline release is signed with. Android only
+      # installs an update over the existing app when this matches.
+      EXPECTED_CERT_SHA256: 654590b31f96b13e4f2f0af08b1c46c27b3b6219fbe5d63ac9c3e18de56a0b3f
+    steps:
+      - name: Skip if already published
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # scripts/release.sh publishes from a laptop; don't build it twice.
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists; nothing to do."
+            echo "SKIP=true" >> "$GITHUB_ENV"
+          fi
+      - uses: actions/checkout@v4
+        if: env.SKIP != 'true'
+      - uses: actions/setup-java@v4
+        if: env.SKIP != 'true'
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        if: env.SKIP != 'true'
+
+      - name: Load signing key
+        if: env.SKIP != 'true'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.DISCIPLINE_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::Signing secrets are missing. See README › Releasing."
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          echo "DISCIPLINE_KEYSTORE=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+
+      - name: Check version matches tag
+        if: env.SKIP != 'true'
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version=$(grep -oE 'versionName = "[^"]+"' app/build.gradle.kts | cut -d'"' -f2)
+          if [ "$tag" != "$version" ]; then
+            echo "::error::Tag v$tag doesn't match versionName $version"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Test and build release
+        if: env.SKIP != 'true'
+        env:
+          DISCIPLINE_KEYSTORE_PASSWORD: ${{ secrets.DISCIPLINE_KEYSTORE_PASSWORD }}
+          DISCIPLINE_KEY_ALIAS: ${{ secrets.DISCIPLINE_KEY_ALIAS }}
+          DISCIPLINE_KEY_PASSWORD: ${{ secrets.DISCIPLINE_KEY_PASSWORD }}
+        run: ./gradlew :app:testDebugUnitTest :app:assembleRelease --stacktrace
+
+      - name: Verify signature and checksum
+        if: env.SKIP != 'true'
+        run: |
+          apk="Discipline-$VERSION.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$apk"
+          apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          cert=$("$apksigner" verify --print-certs "$apk" | grep -m1 'SHA-256 digest' | awk '{print $NF}')
+          if [ "$cert" != "$EXPECTED_CERT_SHA256" ]; then
+            echo "::error::APK is signed with $cert, expected $EXPECTED_CERT_SHA256"
+            exit 1
+          fi
+          sha256sum "$apk" | awk '{print $1}' > "$apk.sha256"
+
+      - name: Release notes from CHANGELOG
+        if: env.SKIP != 'true'
+        run: |
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[?v?"v"\\]?" { on = 1; next }
+            on && /^## / { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          [ -s notes.md ] || echo "See CHANGELOG.md" > notes.md
+
+      - name: Publish
+        if: env.SKIP != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "Discipline-$VERSION.apk" "Discipline-$VERSION.apk.sha256" \
+            --title "Discipline $VERSION" --notes-file notes.md

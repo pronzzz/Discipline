@@ -78,8 +78,8 @@ fun CreateFoodScreen(route: Route.CreateFood) {
     val scope = rememberCoroutineScope()
 
     var loadedId by remember { mutableStateOf<Long?>(null) }
-    var name by rememberSaveable { mutableStateOf("") }
-    var brand by rememberSaveable { mutableStateOf("") }
+    var name by rememberSaveable { mutableStateOf(route.name ?: "") }
+    var brand by rememberSaveable { mutableStateOf(route.brand ?: "") }
     var barcode by rememberSaveable { mutableStateOf(route.barcode ?: "") }
     var serving by rememberSaveable { mutableStateOf("1 serving") }
     var grams by rememberSaveable { mutableStateOf("") }
@@ -271,6 +271,7 @@ fun ExerciseScreen(route: Route.Exercise) {
     var minutes by rememberSaveable { mutableStateOf("30") }
     var kcal by rememberSaveable { mutableStateOf("") }
     var kcalEdited by rememberSaveable { mutableStateOf(false) }
+    var distance by rememberSaveable { mutableStateOf("") }
     var start by rememberSaveable { mutableStateOf(LocalTime.now().minusMinutes(30).withSecond(0).withNano(0).toSecondOfDay()) }
     var existing by remember { mutableStateOf<ExerciseEntity?>(null) }
     var pickingTime by remember { mutableStateOf(false) }
@@ -281,6 +282,7 @@ fun ExerciseScreen(route: Route.Exercise) {
         existing = e
         kind = ExerciseKind.forHcType(e.hcExerciseType) ?: ExerciseKind.OTHER
         name = e.name; minutes = e.minutes.toString(); kcal = e.calories.toString(); kcalEdited = true
+        distance = e.distanceMeters?.let { Units.number(it / 1000.0) } ?: ""
         start = Instant.ofEpochMilli(e.startedAt).atZone(zone).toLocalTime().toSecondOfDay()
     }
 
@@ -290,6 +292,8 @@ fun ExerciseScreen(route: Route.Exercise) {
         if (!kcalEdited && mins != null) kcal = kind.calories(mins, weight).toString()
     }
     val calories = kcal.num()?.toInt()
+    val km = distance.num()?.takeIf { it > 0 && it <= 1000 }
+    val distanceOk = distance.isBlank() || km != null
 
     OneUiScreen(
         title = if (existing != null) "Edit exercise" else "Add exercise",
@@ -305,7 +309,7 @@ fun ExerciseScreen(route: Route.Exercise) {
         },
         bottomBar = {
             BottomActionBar {
-                PillButton("Save", enabled = mins != null && calories != null && name.isNotBlank(), modifier = Modifier.fillMaxWidth(), onClick = {
+                PillButton("Save", enabled = mins != null && calories != null && name.isNotBlank() && distanceOk, modifier = Modifier.fillMaxWidth(), onClick = {
                     val startedAt = day.atTime(LocalTime.ofSecondOfDay(start.toLong())).atZone(zone).toInstant().toEpochMilli()
                     val e = ExerciseEntity(
                         id = existing?.id ?: 0,
@@ -315,6 +319,7 @@ fun ExerciseScreen(route: Route.Exercise) {
                         calories = calories!!,
                         startedAt = startedAt,
                         hcExerciseType = kind.hcType,
+                        distanceMeters = km?.let { it * 1000 },
                     )
                     c.scope.launch { c.diary.saveExercise(e) }
                     nav.pop()
@@ -352,6 +357,7 @@ fun ExerciseScreen(route: Route.Exercise) {
                         OneUiField(minutes, { minutes = it.filter(Char::isDigit).take(4) }, "Duration", Modifier.weight(1f), suffix = "min", keyboardType = KeyboardType.Number, isError = mins == null)
                         OneUiField(kcal, { kcal = it.filter(Char::isDigit).take(5); kcalEdited = true }, "Calories", Modifier.weight(1f), suffix = "kcal", keyboardType = KeyboardType.Number)
                     }
+                    OneUiField(distance, { distance = it.filter { ch -> ch.isDigit() || ch == '.' || ch == ',' }.take(6) }, "Distance (optional)", suffix = "km", keyboardType = KeyboardType.Decimal, isError = !distanceOk)
                     ListRow(
                         title = "Start time",
                         summary = LocalTime.ofSecondOfDay(start.toLong()).format(DateTimeFormatter.ofPattern("HH:mm")),
@@ -426,7 +432,7 @@ fun NutritionScreen(day: LocalDate) {
         item {
             Group(label = "By meal") {
                 (0..3).forEachIndexed { i, meal ->
-                    val m = ui.byMeal[meal].orEmpty().map { it.nutrients }.sum()
+                    val m = ui.mealNutrients(meal)
                     if (i > 0) GroupDivider()
                     ListRow(
                         title = ui.settings.mealName(meal),

@@ -74,7 +74,13 @@ accent; full dark mode (true-black background, dark-grey containers); haptics on
 - Permission request via `PermissionController.createRequestPermissionResultContract()`.
   Connected state is always re-derived from `getGrantedPermissions()`, never only from a cached
   flag. After two denials, show a "Open Health Connect settings" button instead of re-requesting.
-- Per-type toggles let the user opt out of individual data types.
+- All 37 app-accessible data types are declared for read and write (`health/HealthTypes.kt`,
+  checked against the manifest by a unit test). The app has per-category Read and Write switches;
+  choosing individual types happens in Health Connect. Skin temperature and mindfulness are
+  requested only when `HealthConnectFeatures` reports them available.
+- Settings entry points use `HealthConnectClient.getHealthConnectManageDataIntent()`. The
+  platform `MANAGE_HEALTH_PERMISSIONS` action needs `GRANT_RUNTIME_PERMISSIONS` on Android 14+
+  and throws a SecurityException when an app starts it.
 
 ### Writes (Discipline → Health Connect)
 Discipline writes **one `NutritionRecord` per food entry** (rather than a per-meal aggregate), with the food name, real meal type, and a short interval
@@ -91,7 +97,10 @@ higher version, so edits are idempotent and need no remote-id mapping table. Del
 | Food entry / quick add | `NutritionRecord` (energy, protein, carbs, fat, sat fat, fiber, sugar, sodium, cholesterol, potassium) |
 | Water entry | `HydrationRecord` |
 | Weight entry | `WeightRecord` (instant at 08:00 local of that day) |
-| Manual exercise | `ExerciseSessionRecord` + `ActiveCaloriesBurnedRecord` (same client-id stem) |
+| Weight body fat % | `BodyFatRecord` (08:00 local) |
+| Profile height | `HeightRecord` (one per day it changes) |
+| Manual exercise | `ExerciseSessionRecord` + `ActiveCaloriesBurnedRecord` + optional `DistanceRecord` (same client-id stem) |
+| "Log health data" entry | The matching record type (`health/HealthRecords.kt`), client id `discipline-log-<id>`; the outbox id encodes the type so deletes still work after the row is gone |
 
 Writes are enqueued as an outbox row in Room (kind, localId, op = UPSERT/DELETE) and drained
 by a WorkManager job (network not required, retries with backoff), so logging never blocks on
@@ -105,6 +114,11 @@ Health Connect and survives process death.
   shown read-only in the Diary exercise card.
 - Weight from other apps (smart scales): `readRecords(WeightRecord)`, latest per day, imported
   if the user has no local entry that day.
+- Every other readable type: daily aggregate where Health Connect offers one (totals, or
+  averages for rates), otherwise the latest record per day; cached in `hc_readings` and shown
+  in Health data and on Today. Sleep is attributed to the day you wake up.
+- Food and water from other apps (optional): `hc_nutrition` rows and `hc_days.otherWaterMl`,
+  counted in the diary only when the user turns that on.
 - Windowed re-reads instead of change tokens: 30 days on first connect, 7 days on each app
   foreground, 3 days from the hourly WorkManager job. Reads are idempotent replacements of the
   local cache, which keeps the logic simple and self-healing.

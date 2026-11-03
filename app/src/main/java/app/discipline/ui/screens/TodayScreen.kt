@@ -37,11 +37,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.discipline.domain.Meal
 import app.discipline.domain.Units
+import app.discipline.health.HcType
 import app.discipline.health.HealthAvailability
+import app.discipline.health.HealthRecords
 import app.discipline.ui.LocalNavigator
 import app.discipline.ui.Route
 import app.discipline.ui.Tab
 import app.discipline.ui.components.Group
+import app.discipline.ui.components.GroupDivider
 import app.discipline.ui.components.IconBadge
 import app.discipline.ui.components.ListRow
 import app.discipline.ui.components.Meter
@@ -173,6 +176,26 @@ fun TodayScreen(onOpenDiary: () -> Unit) {
             }
         }
 
+        // ---------------------------------------------------------------- health data
+        val shown = ui.readings.filter { it.type !in TodayHidden }.sortedBy { it.type.ordinal }
+        if (hc.connected && shown.isNotEmpty()) {
+            item {
+                Group(label = "Health today") {
+                    shown.take(6).forEachIndexed { i, r ->
+                        if (i > 0) GroupDivider(76.dp)
+                        ListRow(
+                            title = r.type.label,
+                            summary = r.sourceApp.takeIf { it.isNotBlank() },
+                            leading = { IconBadge(categoryIcon(r.type.category), categoryColor(r.type.category)) },
+                            trailing = { Text(HealthRecords.format(r.type, r.value, r.value2, r.choice), style = MaterialTheme.typography.bodyLarge, color = colors.textPrimary) },
+                        )
+                    }
+                    GroupDivider(24.dp)
+                    ListRow("All health data", trailing = { Chevron() }, onClick = { nav.push(Route.HealthData) })
+                }
+            }
+        }
+
         // ---------------------------------------------------------------- health connect nudge
         if (!hc.connected && hc.availability != HealthAvailability.UNAVAILABLE) {
             item {
@@ -236,3 +259,8 @@ fun MacroLine(label: String, value: Double, goal: Int, color: Color) {
         Meter(if (goal > 0) (value / goal).toFloat() else 0f, color)
     }
 }
+
+/** Types Today already shows elsewhere (tiles, rings) or that only make sense in the diary. */
+private val TodayHidden = setOf(
+    HcType.STEPS, HcType.ACTIVE_CALORIES, HcType.NUTRITION, HcType.HYDRATION, HcType.WEIGHT, HcType.EXERCISE, HcType.HEIGHT,
+)

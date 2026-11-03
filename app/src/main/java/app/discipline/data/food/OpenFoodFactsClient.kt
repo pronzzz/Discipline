@@ -32,27 +32,38 @@ class OpenFoodFactsClient(private val userAgent: String) {
         hits.mapNotNull { toFood(it.jsonObject) }
     }
 
-    suspend fun product(barcode: String): FoodEntity? = withContext(Dispatchers.IO) {
+    /** Result of a barcode lookup. */
+    sealed interface Product {
+        data class Complete(val food: FoodEntity) : Product
+        /** Open Food Facts knows the product but has no usable nutrition facts for it. */
+        data class Incomplete(val code: String, val name: String?, val brand: String?) : Product
+        data object Missing : Product
+    }
+
+    suspend fun product(barcode: String): Product = withContext(Dispatchers.IO) {
         val clean = barcode.filter(Char::isDigit)
-        if (clean.isEmpty()) return@withContext null
+        if (clean.isEmpty()) return@withContext Product.Missing
         val body = try {
             get("https://world.openfoodfacts.org/api/v2/product/$clean.json?fields=$FIELDS")
         } catch (e: HttpStatusException) {
-            if (e.code == 404) return@withContext null else throw e
+            if (e.code == 404) return@withContext Product.Missing else throw e
         }
         val root = json.parseToJsonElement(body).jsonObject
-        val product = root["product"] as? JsonObject ?: return@withContext null
-        toFood(product)
+        val product = root["product"] as? JsonObject ?: return@withContext Product.Missing
+        toFood(product)?.let { return@withContext Product.Complete(it) }
+        Product.Incomplete(clean, product.str("product_name")?.trim()?.takeIf { it.isNotEmpty() }, brandOf(product))
     }
+
+    private fun brandOf(o: JsonObject) = when (val b = o["brands"]) {
+        is JsonArray -> b.firstOrNull()?.jsonPrimitive?.content
+        is JsonPrimitive -> b.content.split(',').firstOrNull()
+        else -> null
+    }?.trim()?.takeIf { it.isNotEmpty() }
 
     private fun toFood(o: JsonObject): FoodEntity? {
         val code = o.str("code") ?: return null
         val name = o.str("product_name")?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-        val brand = when (val b = o["brands"]) {
-            is JsonArray -> b.firstOrNull()?.jsonPrimitive?.content
-            is JsonPrimitive -> b.content.split(',').firstOrNull()
-            else -> null
-        }?.trim()?.takeIf { it.isNotEmpty() }
+        val brand = brandOf(o)
         val n = o["nutriments"] as? JsonObject ?: return null
         val per100 = nutrientsFrom(n, "_100g") ?: return null
 
