@@ -50,6 +50,9 @@ There's no account, server, ads or analytics. Your diary lives in a database on 
 1. Download `Discipline-<version>.apk` from [Releases](https://github.com/pronzzz/Discipline/releases/latest) and open it. Android will ask you to allow installs from your browser or file manager.
 2. Discipline checks GitHub for a new version when you open it, at most twice a day. When there is one, it shows the release notes. Tap **Update** and it downloads the APK and verifies its SHA-256 against the `.apk.sha256` file published with the release. Android then asks you to confirm the install. Your diary is kept.
 3. **Settings › App updates** lets you turn the check off, check now, or skip a version.
+4. The first time, Android asks you to allow Discipline to install apps. Google Play Protect
+   may also offer to scan the app, because it isn't from the Play Store. You can scan it, or
+   choose **Install without scanning**.
 
 Every release is signed with the same certificate:
 

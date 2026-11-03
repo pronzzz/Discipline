@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- The update dialog continues on its own after you allow Discipline to install apps, instead of still showing "Allow installs".
+
 ## [1.1.0] - 2026-11-03
 
 ### New

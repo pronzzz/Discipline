@@ -15,11 +15,15 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.discipline.BuildConfig
 import app.discipline.data.Settings
@@ -41,6 +45,13 @@ fun UpdatePrompt() {
     val context = LocalContext.current
     val colors = OneUi.colors
     val state by c.updater.state.collectAsStateWithLifecycle()
+    // Re-check the install permission whenever the user comes back from Android's settings.
+    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
+    val canInstall = remember(lifecycleState, state) { c.updater.canInstall() }
+    LaunchedEffect(canInstall, state) {
+        val s = state
+        if (s is UpdateState.NeedsPermission && canInstall) c.scope.launch { c.updater.install(s.release) }
+    }
 
     fun openPage(r: Release) = runCatching {
         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(r.pageUrl)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -93,9 +104,9 @@ fun UpdatePrompt() {
                 is UpdateState.Downloading, is UpdateState.Installing -> Unit
                 is UpdateState.NeedsPermission -> Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
                     AccentTextButton(
-                        if (c.updater.canInstall()) "Update" else "Allow installs",
+                        if (canInstall) "Update" else "Allow installs",
                         onClick = {
-                            if (c.updater.canInstall()) c.scope.launch { c.updater.install(release) }
+                            if (canInstall) c.scope.launch { c.updater.install(release) }
                             else runCatching { context.startActivity(c.updater.permissionIntent()) }
                         },
                     )
